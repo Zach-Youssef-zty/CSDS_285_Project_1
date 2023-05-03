@@ -142,7 +142,7 @@
      * Erases a square of eraserSize side length centered under the mouse pointer.
      */
     function canvasMouseDown(e) {
-        /* Stopping propagation is a unnecessary, it stops the above mouseDown function from firing */
+        /* Stopping propagation is a bit unnecessary, it stops the above mouseDown function from firing */
         e.stopPropagation();
         click = true;
         canvas2d.beginPath();
