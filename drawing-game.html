@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+
+<body id='' style='height: 100vh; width: 100%; margin: 0; display: grid; grid-template-rows: 1.5fr 8fr .5fr; justify-content: center; position: relative;'>
+    <div style='position: fixed; top: 0; width: 100%; display: flex; justify-content: center;'>
+        <h1 id='word' style='margin: 8px 0'>Current Word:</h1>
+    </div>
+    <div id='game-header' style='grid-row: 1;  display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: end; justify-items: center;'>
+        <text id='score' style='font-size: 18px; margin: 0; width: fit-content;'>Current Score: 0</text>
+        <pre id='countdown' style='font-size: 30px; margin: 0; width: fit-content;'>00:00</pre>
+        <text id='lives' style='font-size: 18px; margin: 0; width: fit-content;'>Remaining Lives: 3</text>
+    </div>
+    <div id='game-board' style='position: relative; height: 80vh; display: flex; flex-direction: column; align-items: center; margin: 0 auto; grid-row: 2;'>
+        <canvas id='drawingpad' style='border: 1px solid black; height: 80%; width: 100%; position: relative;'></canvas>
+        <div id='controls'
+            style=  'display: grid;
+                    grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+                    align-items: center;
+                    justify-items: center;
+                    position: absolute;
+                    top: 0;
+                    width: 100%;
+                    z-index: 5;
+                    margin: 0;
+                    background-color: white;
+                    border: 1px solid black;'
+        >
+            <span style='margin-left: 0.5%'>
+                <button id='draw' style='width: 50px;' disabled>Draw</button>
+                <button id='erase' style='width: fit-content;'>Eraser</button>
+            </span> 
+            <form id='control-form' style='display: contents;'>
+                <span style='display: flex; justify-content: center; align-items: center;'>
+                    <label for='erase-size' style='margin-right: 2px'>Eraser Size:</label>
+                    <input id='erase-size' type='number' name='erase-size' value='8' min='1' style='width: 44%;'>
+                </span>
+                <span style='display: flex; justify-content: center; align-items: center;'>
+                    <label for='pen-size' style='margin-right: 2px'>Pen Size:</label>
+                    <input id='pen-size' type='number' name='pen-size' value='1' min='1' style='width: 44%;'>
+                </span>
+                <span style='display: flex; flex-direction: row; align-items: center;'>
+                    <label for='pen-color' style='margin-right: 2px'>Pen Color:</label>
+                    <input id='pen-color' type='color' name='pen-color' value='#000000'>
+                </span>
+            </form>
+            <button id='clear' style='margin-right: 0.5%; width: fit-content;'>Clear Canvas</button>
+        </div>
+        <button id='submit' style='position: relative; width: fit-content; margin-top: 4px;'>Submit Drawing</button>
+    </div>
+    <div id='between' style='z-index: 10; position: absolute; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;'>
+        <h1 id='info' style='background-color: rgba(255, 255, 255, 0.75);'></h1>
+        <button id='next' style='width: fit-content; display: none;'>Next Drawing</button>
+        <button id='start' style='width: fit-content;'>Start Drawing</button>
+    </div>
+</body>
+<script type='text/javascript'>
+    /* Canvas element */
+    var canvas = document.getElementById('drawingpad');
+    var canvas2d = canvas.getContext('2d');
+
+    /* Word display element */
+    var word = document.getElementById('word');
+
+    /* Score bar elements */
+    var countdown = document.getElementById('countdown');
+    var scoreboard = document.getElementById('score');
+    var lifeDisplay = document.getElementById('lives');
+
+    /* Game board elements */
+    var board = document.getElementById('game-board');
+    var draw =  document.getElementById('draw');
+    var erase =  document.getElementById('erase');
+    var controlForm = document.getElementById('control-form');
+    var esize = document.getElementById('erase-size');
+    var psize = document.getElementById('pen-size');
+    var color = document.getElementById('pen-color');
+    var clear = document.getElementById('clear');
+    var submit = document.getElementById('submit');
+
+    /* Between-drawing elements */
+    var between = document.getElementById('between');
+    var info = document.getElementById('info');
+    var next = document.getElementById('next');
+    var start = document.getElementById('start');
+
+    var click = false;
+    var drawing = true;
+    var prevX = null;
+    var prevY = null;
+    var eraseSize = 8;
+    var penSize = 1;
+    canvas2d.lineWidth = 1;
+    var fileup = null;
+    var count = null;
+    var score = 0;
+    var lives = 3;
+    var currentWord = '';
+    var wordList = [
+        'Shark', 'Dog', 'Cat', 'Mouse', 'Turtle', 'Squirrel',
+        'Whale',  'Dolphin', 'Bee', 'Snake', 'Lion', 'Elephant',
+        'Giraffe', 'Rhino', 'Bear', 'Rabbit', 'Frog', 'Horse',
+        'Cow', 'Pig', 'Chicken', 'Spider', 'Ant', 'Banana',
+        'Flower', 'Tree', 'Palm Tree', 'Apple', 'Strawberry',
+        'Pear', 'Broccoli', 'Carrot', 'Mushroom', 'Pumpkin',
+        'Pineapple', 'Watermelon', 'Guitar', 'Trumpet', 'Snowman',
+        'Pencil', 'Glasses', 'Pants', 'Umbrella', 'Boots',
+        'Car', 'Truck', 'Bicycle', 'Boat', 'Airplane', 'Train', 'Taxi'
+    ];
+
+    /*
+     * The canvas element only ever contains a 300 by 150 grid of pixels.
+     * Since the canvas element is being resized, this internal grid is often not aligned
+     * with the grid used by the rest of the page.
+     * This means that in order for a line to be drawn under the cursor,
+     * a change of coordinates must be performed.
+     * This function performs said conversion of coordinates.
+     */
+    function convertCoords(inX, inY) {
+        const canvasBox = canvas.getBoundingClientRect();
+        const canvasPixelConvertX = 300 / canvasBox.width;
+        const canvasPixelConvertY = 150 / canvasBox.height;
+        const shiftX = inX - canvasBox.x;
+        const shiftY = inY - canvasBox.y;
+        const convertX = shiftX * canvasPixelConvertX;
+        const convertY = shiftY * canvasPixelConvertY;
+        return {convertX, convertY};
+    }
+
+    /* 
+     * This exists purely so that you can press down the mouse outside of the canvas,
+     * drag your mouse over the canvas, and actually draw a line without trying to draw outside of the canvas.
+     */
+    function mouseDown(e) {
+        click = true;
+        canvas2d.beginPath();
+    }
+
+    /*
+     * Drawing mode:
+     * Places a square of penSize side length centered under the mouse pointer.
+     * 
+     * Erasing mode:
+     * Erases a square of eraserSize side length centered under the mouse pointer.
+     */
+    function canvasMouseDown(e) {
+        /* Stopping propagation is a unnecessary, it stops the above mouseDown function from firing */
+        e.stopPropagation();
+        click = true;
+        canvas2d.beginPath();
+        const {convertX, convertY} = convertCoords(e.pageX, e.pageY);
+        
+        if(drawing) {
+            canvas2d.fillRect(convertX - Math.floor(penSize/2), convertY - Math.floor(penSize/2), penSize, penSize);
+        } else {
+            canvas2d.clearRect(convertX - Math.floor(eraseSize/2), convertY - Math.floor(eraseSize/2), eraseSize, eraseSize);
+        }
+        prevX = convertX;
+        prevY = convertY;
+    }
+
+    /* Register that you are no longer clicking the mouse */
+    function mouseUp(e) {
+        click = false;
+        prevX = null;
+        prevY = null;
+    }
+
+    /*
+     * First checks if the left mouse button is being held down. Then acts according to drawing/erasing mode.
+     * 
+     * Drawing mode:
+     * Draws both a line of specified width from the last recorded mouse position to the current mouse position
+     * and a square of side length equal to the specified width directly under the mouse.
+     * This is done because at high stroke widths, the line drawn becomes spikey at curves.
+     * This happens because the width varies but the lenth of segments being drawn is unchanged.
+     * Placing a square of the correct width under the mouse smooths this spikey effect at large stroke widths.
+     * However, at small stroke widths, the square method produces a dashed line, so a line from point-to-point is
+     * also drawn to create smooth, continuous lines at low stroke widths.
+     * 
+     * Erasing mode:
+     * Erases a square of eraserSize side length centered under the mouse pointer.
+     */
+    function mouseMove(e) {
+        if(click) {
+            const {convertX, convertY} = convertCoords(e.pageX, e.pageY);
+
+            if(drawing) {
+                (prevX == null) ? canvas2d.moveTo(convertX, convertY) : canvas2d.moveTo(prevX, prevY);
+                canvas2d.lineTo(convertX, convertY);
+                canvas2d.fillRect(convertX - Math.floor(penSize/2), convertY - Math.floor(penSize/2), penSize, penSize);
+                canvas2d.stroke();
+            } else {
+                canvas2d.clearRect(convertX - Math.floor(eraseSize/2), convertY - Math.floor(eraseSize/2), eraseSize, eraseSize);
+            }
+            prevX = convertX;
+            prevY = convertY;
+        }
+    }
+
+    /* Functions to switch between 'drawing' and 'erasing' */
+    function clickDraw(e) {
+        drawing = true;
+        draw.disabled = true;
+        erase.disabled = false;
+    }
+    function clickErase(e) {
+        drawing = false;
+        draw.disabled = false;
+        erase.disabled = true;
+    }
+
+    /* Functions to update stroke sizes and colors */
+    function setESize(e) {
+        eraseSize = e?.target?.value == null ? 8 : e.target.value;
+    }
+    function setPSize(e) {
+        canvas2d.lineWidth = e?.target?.value == null ? 1 : e.target.value;
+        penSize = e?.target?.value == null ? 1 : e.target.value;
+    }
+    function setColor(e) {
+        canvas2d.strokeStyle = e?.target?.value == null ? '#000000' : e.target.value;
+        canvas2d.fillStyle = e?.target?.value == null ? '#000000' : e.target.value;
+    }
+
+    /* Clears the canvas by clearing a rectangle equal to the entirety of the canvas */
+    function clearCanvas(e) {
+        canvas2d.clearRect(0, 0, 300, 150);
+    }
+
+    /* Determines the score received or lives lost based on the API response */
+    function analyzeResponse(data) {
+        const values = Object.values(data);
+        const flatten = values.flatMap(result => result['items']);
+        const filter = flatten.filter(prediction => prediction.label.toLowerCase().includes(currentWord.toLowerCase()));
+        const scores = filter.map(prediction => Math.floor(1000 * prediction.confidence));
+        let points = 0;
+        scores.forEach(score => points = Math.max(score, points));
+        /* Handling lost life */
+        if(points === 0) {
+            lives--;
+            lifeDisplay.innerHTML = `Remaining Lives: ${lives}`;
+            /* Handling game end */
+            if(lives === 0) {
+                info.innerHTML = `Game Over. You scored ${score} points`;
+                next.innerHTML = 'Play Again';
+                next.disabled = false;
+                return;
+            }
+        }
+        info.innerHTML = `Points earned: ${points}`;
+        score += points;
+        scoreboard.innerHTML = `Current Score: ${score}`;
+        next.disabled = false;
+    }
+
+    /*
+     * Submits the currently drawn image to the object classification API.
+     * Passes the results of the API call to the scoring/analysis function.
+     */
+    async function submitImage(e) {
+        /* Stops the timer */
+        clearInterval(count);
+        board.style.pointerEvents = 'none';
+        next.disabled = true;
+        info.innerHTML = 'Awaiting response from API';
+        between.style.display = 'flex';
+        await canvas.toBlob(async (blob) => {
+            fileup = new File([blob], 'image.jpeg', {type: 'image/jpeg'});
+            const form = new FormData();
+            form.append('providers', 'api4ai,clarifai,amazon,google,microsoft,sentisight');
+            form.append('file', fileup);
+
+            const response = await fetch('https://api.edenai.run/v2/image/object_detection', {
+                method: 'POST',
+                headers: {
+                    Authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiOGY1NDY2YTUtMjExNC00MWYxLTk0MGEtNDYwZDg4MDgyMDhjIiwidHlwZSI6ImFwaV90b2tlbiJ9.vxArGnJZMFlcEbwkprDi52jTte6y_s1Ej-3xNSA0dbI'
+                },
+                body: form,
+            });
+            const data = await response.json();
+            analyzeResponse(data);
+        }, 'image/jpeg');
+    }
+    
+    /* Places a leading 0 in front of numbers 0-9 */
+    function numToDateString(num) {
+        return (num >= 10) ? num : `0${num}`;
+    }
+
+    /* Resets and restarts the timer */
+    function resetTimer(e, minutes) {
+        const startTime = new Date();
+        const endTime = new Date(startTime.getTime() + minutes * 60000);
+        count = setInterval(function() {
+            let date = new Date();
+            let distance = endTime.getTime() - date.getTime();
+            let minutes = Math.max(Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)), 0);
+            let seconds = Math.max(Math.floor((distance % (1000 * 60)) / 1000), 0);
+            countdown.innerHTML = `${numToDateString(minutes)}:${numToDateString(seconds)}`;
+            /* Auto-submit the user's drawing once there is less than 1s left to draw */
+            if (distance < 1000) {
+                submitImage();
+                return;
+            }
+        }, 1000);
+    }
+
+    /* Resets board between drawings, also resets game once lives are out */
+    function resetBoard(e) {
+        if(lives === 0) {
+            /* Reset game */
+            lives = 3;
+            lifeDisplay.innerHTML = `Remaining Lives: ${lives}`;
+            score = 0;
+            scoreboard.innerHTML = `Current Score: ${score}`;
+            setESize();
+            esize.value = 8;
+            setPSize();
+            psize.value = 1;
+            setColor();
+            color.value = '#000000';
+        }
+        clearCanvas();
+        selectWord();
+        next.style.display = 'none';
+        start.style.removeProperty('display');
+        next.innerHTML = 'Next Drawing';
+    }
+
+    /* Selects a new word for the player to draw */
+    function selectWord() {
+        let randomIndex = Math.floor(Math.random() * wordList.length);
+        /* Avoid selecting same word twice in a row */
+        while(currentWord === wordList[randomIndex]) {
+            randomIndex = Math.floor(Math.random() * wordList.length);
+        }
+        currentWord = wordList[randomIndex];
+        word.innerHTML = `Current Word: ${currentWord}`;
+        info.innerHTML = `You must draw: ${currentWord}`;
+    }
+
+    /* Clears between-drawing popups, enables canvas, and starts timer */
+    function startDrawing(e) {
+        board.style.removeProperty('pointer-events');
+        between.style.display = 'none';
+        start.style.display = 'none';
+        next.style.removeProperty('display');
+        resetTimer(e, 1);
+    }
+
+    document.addEventListener('mousedown', mouseDown);
+    document.addEventListener('mouseup', mouseUp);
+    canvas.addEventListener('mousemove', mouseMove);
+    canvas.addEventListener('mousedown', canvasMouseDown);
+    draw.addEventListener('click', clickDraw);
+    erase.addEventListener('click', clickErase);
+    clear.addEventListener('click', clearCanvas);
+    esize.addEventListener('change', setESize);
+    psize.addEventListener('change', setPSize)
+    color.addEventListener('change', setColor);
+    controlForm.addEventListener('submit', e => e.preventDefault());
+    submit.addEventListener('click', submitImage);
+    next.addEventListener('click', resetBoard);
+    start.addEventListener('click', startDrawing);
+
+    selectWord();
+</script>
